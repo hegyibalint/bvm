@@ -1,0 +1,5 @@
+# Rust output directory
+target/
+
+# CLion directory
+.idea/
