@@ -1,6 +1,6 @@
-use std::{fmt, io, string};
 use std::error::Error;
 use std::fmt::Debug;
+use std::{fmt, io, string};
 
 use byteorder::{BigEndian, ReadBytesExt};
 
@@ -14,6 +14,7 @@ pub mod constant_pool;
 // STATIC VALUES
 // =============================================================================
 
+/// This is the magic value used to start every class file.
 static CLASS_MAGIC: u32 = 0xCAFEBABE;
 
 // =============================================================================
@@ -21,37 +22,39 @@ static CLASS_MAGIC: u32 = 0xCAFEBABE;
 // =============================================================================
 
 #[derive(Debug)]
-pub struct ClassLoadError {
+pub struct ClassLoadingError {
     details: String,
 }
 
-impl ClassLoadError {
-    fn new(msg: &str) -> ClassLoadError {
-        ClassLoadError { details: msg.to_string() }
+impl ClassLoadingError {
+    fn new(msg: &str) -> ClassLoadingError {
+        ClassLoadingError {
+            details: msg.to_string(),
+        }
     }
 }
 
-impl fmt::Display for ClassLoadError {
+impl fmt::Display for ClassLoadingError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.details)
     }
 }
 
-impl Error for ClassLoadError {
+impl Error for ClassLoadingError {
     fn description(&self) -> &str {
         &self.details
     }
 }
 
-impl From<io::Error> for ClassLoadError {
+impl From<io::Error> for ClassLoadingError {
     fn from(err: io::Error) -> Self {
-        ClassLoadError::new(err.description())
+        ClassLoadingError::new(err.description())
     }
 }
 
-impl From<string::FromUtf8Error> for ClassLoadError {
+impl From<string::FromUtf8Error> for ClassLoadingError {
     fn from(err: string::FromUtf8Error) -> Self {
-        ClassLoadError::new(err.description())
+        ClassLoadingError::new(err.description())
     }
 }
 
@@ -66,27 +69,31 @@ struct EmptyContext {}
 // COMMON TRAITS
 // =============================================================================
 
-// TODO: Think about a struct/trait sharing the context with all modules
-
-trait ReadOne<C = EmptyContext> where
-    Self: Sized
+trait ReadOne<C = EmptyContext>
+where
+    Self: Sized,
 {
-    fn read_one<R: ReadBytesExt>(reader: &mut R, context: &C) -> Result<Self, ClassLoadError>;
+    fn read_one<R: ReadBytesExt>(reader: &mut R, context: &C) -> Result<Self, ClassLoadingError>;
 }
 
-trait ReadAll<C = EmptyContext> where
-    Self: ReadOne<C>
+trait ReadAll<C = EmptyContext>
+where
+    Self: ReadOne<C>,
 {
-    fn read_count<R: ReadBytesExt>(reader: &mut R) -> Result<usize, ClassLoadError> {
+    fn read_count<R: ReadBytesExt>(reader: &mut R) -> Result<usize, ClassLoadingError> {
         let count = reader.read_u16::<BigEndian>()? as usize;
         Ok(count)
     }
 
-    fn skip_amount(element: &Self) -> usize {
-        return 0
+    fn skip_amount(_element: &Self) -> usize {
+        return 0;
     }
 
-    fn read_all_from<R: ReadBytesExt>(reader: &mut R, context: &C, from: usize) -> Result<Vec<Self>, ClassLoadError> {
+    fn read_all_from<R: ReadBytesExt>(
+        reader: &mut R,
+        context: &C,
+        from: usize,
+    ) -> Result<Vec<Self>, ClassLoadingError> {
         let count = Self::read_count(reader)?;
         let mut elements = Vec::with_capacity(count);
 
@@ -101,18 +108,22 @@ trait ReadAll<C = EmptyContext> where
         Ok(elements)
     }
 
-    fn read_all<R: ReadBytesExt>(reader: &mut R, context: &C) -> Result<Vec<Self>, ClassLoadError> {
+    fn read_all<R: ReadBytesExt>(
+        reader: &mut R,
+        context: &C,
+    ) -> Result<Vec<Self>, ClassLoadingError> {
         Self::read_all_from(reader, context, 0)
     }
 }
 
 // =============================================================================
-// FIELDS
+// CLASS FIELDS
 // =============================================================================
 
 // Field Info ------------------------------------------------------------------
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     struct FieldAccessFlags: u16 {
         const PUBLIC = 0x0001;
         const PRIVATE = 0x0002;
@@ -134,10 +145,14 @@ pub struct FieldInfo {
     attributes: Vec<Attribute>,
 }
 
-impl ReadOne<ConstantPoolContext> for FieldInfo {
-    fn read_one<R: ReadBytesExt>(reader: &mut R, context: &ConstantPoolContext) -> Result<Self, ClassLoadError> {
+impl ReadOne<ConstantPoolContext<'_>> for FieldInfo {
+    fn read_one<R: ReadBytesExt>(
+        reader: &mut R,
+        context: &ConstantPoolContext,
+    ) -> Result<Self, ClassLoadingError> {
         let access_flags = reader.read_u16::<BigEndian>()?;
-        let access_flags = FieldAccessFlags::from_bits(access_flags).ok_or(ClassLoadError::new("Invalid field access flags"))?;
+        let access_flags = FieldAccessFlags::from_bits(access_flags)
+            .ok_or(ClassLoadingError::new("Invalid field access flags"))?;
         let name_index = reader.read_u16::<BigEndian>()?;
         let descriptor_index = reader.read_u16::<BigEndian>()?;
         let attributes = Attribute::read_all(reader, context)?;
@@ -151,11 +166,31 @@ impl ReadOne<ConstantPoolContext> for FieldInfo {
     }
 }
 
-// =============================================================================
-// METHODS
-// =============================================================================
+impl ReadAll<ConstantPoolContext<'_>> for FieldInfo {}
+
+// Interface -------------------------------------------------------------------
+
+#[derive(Debug)]
+pub struct Interface {
+    interface_index: u16,
+}
+
+impl ReadOne<EmptyContext> for Interface {
+    fn read_one<R: ReadBytesExt>(
+        reader: &mut R,
+        _: &EmptyContext,
+    ) -> Result<Self, ClassLoadingError> {
+        let interface_index = reader.read_u16::<BigEndian>()?;
+        Ok(Interface { interface_index })
+    }
+}
+
+impl ReadAll for Interface {}
+
+// Method Info -----------------------------------------------------------------
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     struct MethodAccessFlags: u16 {
         const PUBLIC = 0x0001;
         const PRIVATE = 0x0002;
@@ -180,10 +215,14 @@ pub struct MethodInfo {
     attributes: Vec<Attribute>,
 }
 
-impl ReadOne<ConstantPoolContext> for MethodInfo {
-    fn read_one<R: ReadBytesExt>(reader: &mut R, context: &ConstantPoolContext) -> Result<Self, ClassLoadError> {
+impl ReadOne<ConstantPoolContext<'_>> for MethodInfo {
+    fn read_one<R: ReadBytesExt>(
+        reader: &mut R,
+        context: &ConstantPoolContext,
+    ) -> Result<Self, ClassLoadingError> {
         let access_flags = reader.read_u16::<BigEndian>()?;
-        let access_flags = MethodAccessFlags::from_bits(access_flags).ok_or(ClassLoadError::new("Invalid method access flags"))?;
+        let access_flags = MethodAccessFlags::from_bits(access_flags)
+            .ok_or(ClassLoadingError::new("Invalid method access flags"))?;
         let name_index = reader.read_u16::<BigEndian>()?;
         let descriptor_index = reader.read_u16::<BigEndian>()?;
         let attributes = Attribute::read_all(reader, context)?;
@@ -197,11 +236,14 @@ impl ReadOne<ConstantPoolContext> for MethodInfo {
     }
 }
 
+impl ReadAll<ConstantPoolContext<'_>> for MethodInfo {}
+
 // =============================================================================
 // CLASS
 // =============================================================================
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     struct ClassAccessFlags: u16 {
         const PUBLIC = 0x0001;
         const FINAL = 0x0010;
@@ -222,52 +264,53 @@ pub struct Class {
     access_flags: ClassAccessFlags,
     this_class: u16,
     super_class: u16,
-    interface_indices: Vec<u16>,
+    interfaces: Vec<Interface>,
     fields: Vec<FieldInfo>,
     methods: Vec<MethodInfo>,
     attributes: Vec<Attribute>,
 }
 
-impl Class {}
-
 impl Class {
-    pub fn read<R: ReadBytesExt>(reader: &mut R) -> Result<(), ClassLoadError> {
+    pub fn read<R: ReadBytesExt>(reader: &mut R) -> Result<Class, ClassLoadingError> {
         let magic = reader.read_u32::<BigEndian>()?;
         if magic != CLASS_MAGIC {
-            return Err(ClassLoadError::new("Magic header is not matching"));
+            return Err(ClassLoadingError::new("Magic header is not matching"));
         }
+
+        let empty_context = EmptyContext::default();
 
         let minor_version = reader.read_u16::<BigEndian>()?;
         let major_version = reader.read_u16::<BigEndian>()?;
-        let constant_pool = ConstantPool::read_one(reader, &EmptyContext::default())?;
-        // let access_flags = reader.read_u16::<BigEndian>()?;
-        // let access_flags = ClassAccessFlags::from_bits(access_flags).ok_or(ClassLoadError::new("Invalid class access flags"))?;
-        // let this_class = reader.read_u16::<BigEndian>()?;
-        // let super_class = reader.read_u16::<BigEndian>()?;
-        // let interface_indices = Class::read_interface_indices(reader)?;
-        // let fields = Class::read_fields(reader, &constant_pool)?;
-        // let methods = Class::read_methods(reader, &constant_pool)?;
-        // let attributes = Class::read_attributes(reader, &constant_pool)?;
+        let constant_pool = ConstantPool::read_one(reader, &empty_context)?;
+        let access_flags = reader.read_u16::<BigEndian>()?;
+        let access_flags = ClassAccessFlags::from_bits(access_flags)
+            .ok_or(ClassLoadingError::new("Invalid class access flags"))?;
+        let this_class = reader.read_u16::<BigEndian>()?;
+        let super_class = reader.read_u16::<BigEndian>()?;
+        let interfaces = Interface::read_all(reader, &empty_context)?;
+        let fields = FieldInfo::read_all(reader, &ConstantPoolContext::new(&constant_pool))?;
+        let methods = MethodInfo::read_all(reader, &ConstantPoolContext::new(&constant_pool))?;
+        let attributes = Attribute::read_all(reader, &ConstantPoolContext::new(&constant_pool))?;
 
-        // let mut rest = Vec::new();
-        // reader.read_to_end(&mut rest);
-        // if !rest.is_empty() {
-        //     return Err(ClassLoadError::new("Data is still present after reading class file"));
-        // }
+        let mut rest = Vec::new();
+        reader.read(&mut rest)?;
+        if !rest.is_empty() {
+            return Err(ClassLoadingError::new(
+                "Data is still present after reading class file",
+            ));
+        }
 
-        Ok(())
-
-        // return Ok(Class {
-        //     minor_version,
-        //     major_version,
-        //     constant_pool,
-        //     access_flags,
-        //     this_class,
-        //     super_class,
-        //     interface_indices,
-        //     fields,
-        //     methods,
-        //     attributes,
-        // });
+        return Ok(Class {
+            minor_version,
+            major_version,
+            constant_pool,
+            access_flags,
+            this_class,
+            super_class,
+            interfaces,
+            fields,
+            methods,
+            attributes,
+        });
     }
 }
