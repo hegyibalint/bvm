@@ -1,10 +1,11 @@
 use std::fs::File;
 use std::io;
+use std::io::BufReader;
 
 use clap::Parser;
 
 use crate::class::Class;
-use crate::packaging::jar;
+use crate::packaging::jar::Jar;
 
 mod class;
 mod packaging;
@@ -38,13 +39,32 @@ fn main() {
     //     }
     // }
 
-    let rt_jar_file = File::open("/Users/bhegyi/.sdkman/candidates/java/8.0.372-zulu/zulu-8.jdk/Contents/Home/jre/lib/rt.jar").unwrap();
-    let rt_jar_reader = io::BufReader::new(rt_jar_file);
-    jar::load_jar(rt_jar_reader);
+    // let mut jar = Jar::new("/Users/bhegyi/.sdkman/candidates/java/8.0.372-zulu/zulu-8.jdk/Contents/Home/jre/lib/rt.jar").unwrap();
+    // for class_path in ["java/lang/Object", "java/lang/String"] {
+    //     let mut class_file = jar.open(class_path).unwrap();
+    //     let object_class = Class::read(&mut class_file).unwrap();
+    //     // println!("{:#?}", object_class);
+    //
+    //     let this_class = object_class.this_class;
+    //     let class_ref = &object_class.constant_pool[this_class];
+    //     println!("{:#?}", class_ref);
+    //
+    //     match class_ref {
+    //         Constant::Class(const_class) => {
+    //             let const_class = &object_class.constant_pool[const_class.name_index];
+    //             println!("{:#?}", const_class);
+    //         }
+    //         _ => panic!("Not a class reference"),
+    //     }
+    // }
 
-    let main_class_file = File::open("res/Main.class").unwrap();
-    let mut main_class_reader = io::BufReader::new(main_class_file);
+    // let rt_jar_file = File::open("/Users/bhegyi/.sdkman/candidates/java/8.0.372-zulu/zulu-8.jdk/Contents/Home/jre/lib/rt.jar").unwrap();
+    // let rt_jar_reader = BufReader::new(rt_jar_file);
+    let mut rt_jar = Jar::new("/Users/bhegyi/.sdkman/candidates/java/8.0.372-zulu/zulu-8.jdk/Contents/Home/jre/lib/rt.jar").unwrap();
+    //
+    // let main_class_file = File::open("res/Add.class").unwrap();
+    // let mut main_class_reader = BufReader::new(main_class_file);
 
-    let main_class = Class::read(&mut main_class_reader).unwrap();
-    println!("{:#?}", main_class);
+    let main_class = Class::read(&mut rt_jar.open("java.lang.Object").unwrap()).unwrap();
+    println!("{}", main_class);
 }

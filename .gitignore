@@ -3,3 +3,6 @@ target/
 
 # CLion directory
 .idea/
+
+# macOS
+.DS_Store

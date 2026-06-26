@@ -6,11 +6,11 @@
 
 use byteorder::{BigEndian, ReadBytesExt};
 
+use crate::class::{ClassParsingError, EmptyContext, ReadAll, ReadOne};
 use crate::class::attributes::VerificationType::{
     Double, Float, Integer, Long, Null, Object, Top, Uninitialized, UninitializedThis,
 };
 use crate::class::constant_pool::{Constant, ConstantPool, ConstantPoolContext};
-use crate::class::{ClassLoadingError, EmptyContext, ReadAll, ReadOne};
 
 // =============================================================================
 // CONTEXT
@@ -26,7 +26,7 @@ struct AttributeContext<'a> {
 /// Context usable when reading [StackMapTableAttribute] attributes.
 #[derive(Debug)]
 struct StackFrameContext {
-    frame_type: u8,
+    pub frame_type: u8,
 }
 
 // =============================================================================
@@ -37,14 +37,14 @@ struct StackFrameContext {
 
 #[derive(Debug)]
 pub struct ConstantValueAttribute {
-    const_value_index: u16,
+    pub const_value_index: u16,
 }
 
 impl ReadOne<AttributeContext<'_>> for ConstantValueAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let const_value_index = reader.read_u16::<BigEndian>()?;
         Ok(ConstantValueAttribute { const_value_index })
     }
@@ -54,17 +54,17 @@ impl ReadOne<AttributeContext<'_>> for ConstantValueAttribute {
 
 #[derive(Debug)]
 pub struct ExceptionTableAttribute {
-    start_pc: u16,
-    end_pc: u16,
-    handler_pc: u16,
-    catch_type: u16,
+    pub start_pc: u16,
+    pub end_pc: u16,
+    pub handler_pc: u16,
+    pub catch_type: u16,
 }
 
 impl ReadOne<AttributeContext<'_>> for ExceptionTableAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let start_pc = reader.read_u16::<BigEndian>()?;
         let end_pc = reader.read_u16::<BigEndian>()?;
         let handler_pc = reader.read_u16::<BigEndian>()?;
@@ -83,18 +83,18 @@ impl ReadAll<AttributeContext<'_>> for ExceptionTableAttribute {}
 
 #[derive(Debug)]
 pub struct CodeAttribute {
-    max_stack: u16,
-    max_locals: u16,
-    code: Vec<u8>,
-    exception_tables: Vec<ExceptionTableAttribute>,
-    attributes: Vec<Attribute>,
+    pub max_stack: u16,
+    pub max_locals: u16,
+    pub code: Vec<u8>,
+    pub exception_tables: Vec<ExceptionTableAttribute>,
+    pub attributes: Vec<Attribute>,
 }
 
 impl ReadOne<AttributeContext<'_>> for CodeAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let max_stack = reader.read_u16::<BigEndian>()?;
         let max_locals = reader.read_u16::<BigEndian>()?;
 
@@ -130,7 +130,7 @@ impl ReadOne<EmptyContext> for ObjectVariableInfo {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &EmptyContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let cpool_index = reader.read_u16::<BigEndian>()?;
         Ok(ObjectVariableInfo {
             constant_index: cpool_index,
@@ -147,7 +147,7 @@ impl ReadOne<EmptyContext> for UninitializedVariableInfo {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &EmptyContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let offset = reader.read_u16::<BigEndian>()?;
         Ok(UninitializedVariableInfo { offset })
     }
@@ -170,7 +170,7 @@ impl ReadOne<EmptyContext> for VerificationType {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &EmptyContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let tag = reader.read_u8()?;
         match tag {
             0 => Ok(Top),
@@ -188,7 +188,7 @@ impl ReadOne<EmptyContext> for VerificationType {
             )?)),
             4 => Ok(Long),
             3 => Ok(Double),
-            _ => Err(ClassLoadingError::new("Cannot determine verification type")),
+            _ => Err(ClassParsingError::new("Cannot determine verification type")),
         }
     }
 }
@@ -197,14 +197,14 @@ impl ReadAll<EmptyContext> for VerificationType {}
 
 #[derive(Debug)]
 pub struct SameFrame {
-    offset_delta: u8,
+    pub offset_delta: u8,
 }
 
 impl ReadOne<StackFrameContext> for SameFrame {
     fn read_one<R: ReadBytesExt>(
-        reader: &mut R,
+        _reader: &mut R,
         context: &StackFrameContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let offset_delta = context.frame_type;
         Ok(SameFrame { offset_delta })
     }
@@ -212,15 +212,15 @@ impl ReadOne<StackFrameContext> for SameFrame {
 
 #[derive(Debug)]
 pub struct SameLocalsOneStackItemFrame {
-    offset_delta: u8,
-    stack: VerificationType,
+    pub offset_delta: u8,
+    pub stack: VerificationType,
 }
 
 impl ReadOne<StackFrameContext> for SameLocalsOneStackItemFrame {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         context: &StackFrameContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let offset_delta = context.frame_type - 64;
         let stack = VerificationType::read_one(reader, &EmptyContext::default())?;
         Ok(SameLocalsOneStackItemFrame {
@@ -232,15 +232,15 @@ impl ReadOne<StackFrameContext> for SameLocalsOneStackItemFrame {
 
 #[derive(Debug)]
 pub struct SameLocalsOneStackItemExtendedFrame {
-    offset_delta: u16,
-    stack: VerificationType,
+    pub offset_delta: u16,
+    pub stack: VerificationType,
 }
 
 impl ReadOne<EmptyContext> for SameLocalsOneStackItemExtendedFrame {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &EmptyContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let offset_delta = reader.read_u16::<BigEndian>()?;
         let stack = VerificationType::read_one(reader, &EmptyContext::default())?;
         Ok(SameLocalsOneStackItemExtendedFrame {
@@ -252,14 +252,14 @@ impl ReadOne<EmptyContext> for SameLocalsOneStackItemExtendedFrame {
 
 #[derive(Debug)]
 pub struct ChopFrame {
-    offset_delta: u16,
+    pub offset_delta: u16,
 }
 
 impl ReadOne<EmptyContext> for ChopFrame {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &EmptyContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let offset_delta = reader.read_u16::<BigEndian>()?;
         Ok(ChopFrame { offset_delta })
     }
@@ -267,14 +267,14 @@ impl ReadOne<EmptyContext> for ChopFrame {
 
 #[derive(Debug)]
 pub struct SameExtendedFrame {
-    offset_delta: u16,
+    pub offset_delta: u16,
 }
 
 impl ReadOne<EmptyContext> for SameExtendedFrame {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &EmptyContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let offset_delta = reader.read_u16::<BigEndian>()?;
         Ok(SameExtendedFrame { offset_delta })
     }
@@ -282,15 +282,15 @@ impl ReadOne<EmptyContext> for SameExtendedFrame {
 
 #[derive(Debug)]
 pub struct AppendFrame {
-    offset_delta: u16,
-    locals: Vec<VerificationType>,
+    pub offset_delta: u16,
+    pub locals: Vec<VerificationType>,
 }
 
 impl ReadOne<StackFrameContext> for AppendFrame {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         context: &StackFrameContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let offset_delta = reader.read_u16::<BigEndian>()?;
         let mut locals = Vec::new();
         for _ in 0..(context.frame_type - 251) {
@@ -308,16 +308,16 @@ impl ReadOne<StackFrameContext> for AppendFrame {
 
 #[derive(Debug)]
 pub struct FullFrame {
-    offset_delta: u16,
-    locals: Vec<VerificationType>,
-    stack: Vec<VerificationType>,
+    pub offset_delta: u16,
+    pub locals: Vec<VerificationType>,
+    pub stack: Vec<VerificationType>,
 }
 
 impl ReadOne<EmptyContext> for FullFrame {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &EmptyContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let offset_delta = reader.read_u16::<BigEndian>()?;
         let locals = VerificationType::read_all(reader, &EmptyContext::default())?;
         let stack = VerificationType::read_all(reader, &EmptyContext::default())?;
@@ -345,7 +345,7 @@ impl ReadOne<AttributeContext<'_>> for StackMapTableAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let frame_type = reader.read_u8()?;
         let frame_context = StackFrameContext { frame_type };
 
@@ -357,9 +357,7 @@ impl ReadOne<AttributeContext<'_>> for StackMapTableAttribute {
             64..=127 => Ok(StackMapTableAttribute::SameLocalsOneStackItem(
                 SameLocalsOneStackItemFrame::read_one(reader, &frame_context)?,
             )),
-            128..=246 => Err(ClassLoadingError::new(
-                format!("Reserved frame type {}", frame_type).as_str(),
-            )),
+            128..=246 => Err(ClassParsingError::new("Reserved frame type")),
             247 => Ok(StackMapTableAttribute::SameLocalsOneStackItemExtended(
                 SameLocalsOneStackItemExtendedFrame::read_one(reader, &EmptyContext::default())?,
             )),
@@ -378,9 +376,6 @@ impl ReadOne<AttributeContext<'_>> for StackMapTableAttribute {
                 reader,
                 &EmptyContext::default(),
             )?)),
-            value => Err(ClassLoadingError::new(
-                format!("Unknown frame type {}", value).as_str(),
-            )),
         };
 
         return frame;
@@ -393,14 +388,14 @@ impl ReadAll<AttributeContext<'_>> for StackMapTableAttribute {}
 
 #[derive(Debug)]
 pub struct ExceptionIndexAttribute {
-    index: u16,
+    pub index: u16,
 }
 
 impl ReadOne<AttributeContext<'_>> for ExceptionIndexAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let index = reader.read_u16::<BigEndian>()?;
         Ok(ExceptionIndexAttribute { index })
     }
@@ -412,7 +407,7 @@ impl ReadAll<AttributeContext<'_>> for ExceptionIndexAttribute {}
 
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-    struct InnerClassAccessFlags: u16 {
+    pub struct InnerClassAccessFlags: u16 {
         const PUBLIC = 0x0001;
         const PRIVATE = 0x0002;
         const PROTECTED = 0x0004;
@@ -428,24 +423,24 @@ bitflags::bitflags! {
 
 #[derive(Debug)]
 pub struct InnerClassAttribute {
-    inner_class_info_index: u16,
-    outer_class_info_index: u16,
-    inner_name_index: u16,
-    inner_class_access_flags: InnerClassAccessFlags,
+    pub inner_class_info_index: u16,
+    pub outer_class_info_index: u16,
+    pub inner_name_index: u16,
+    pub inner_class_access_flags: InnerClassAccessFlags,
 }
 
 impl ReadOne<AttributeContext<'_>> for InnerClassAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let inner_class_info_index = reader.read_u16::<BigEndian>()?;
         let outer_class_info_index = reader.read_u16::<BigEndian>()?;
         let inner_name_index = reader.read_u16::<BigEndian>()?;
         let inner_class_access_flags = reader.read_u16::<BigEndian>()?;
         let inner_class_access_flags =
             InnerClassAccessFlags::from_bits(inner_class_access_flags)
-                .ok_or(ClassLoadingError::new("Invalid inner class access flags"))?;
+                .ok_or(ClassParsingError::new("Invalid inner class access flags"))?;
 
         Ok(InnerClassAttribute {
             inner_class_info_index,
@@ -462,15 +457,15 @@ impl ReadAll<AttributeContext<'_>> for InnerClassAttribute {}
 
 #[derive(Debug)]
 pub struct EnclosingMethodAttribute {
-    class_index: u16,
-    method_index: u16,
+    pub class_index: u16,
+    pub method_index: u16,
 }
 
 impl ReadOne<AttributeContext<'_>> for EnclosingMethodAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let class_index = reader.read_u16::<BigEndian>()?;
         let method_index = reader.read_u16::<BigEndian>()?;
 
@@ -485,14 +480,14 @@ impl ReadOne<AttributeContext<'_>> for EnclosingMethodAttribute {
 
 #[derive(Debug)]
 pub struct SignatureAttribute {
-    signature_index: u16,
+    pub signature_index: u16,
 }
 
 impl ReadOne<AttributeContext<'_>> for SignatureAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let signature_index = reader.read_u16::<BigEndian>()?;
 
         Ok(SignatureAttribute { signature_index })
@@ -503,14 +498,14 @@ impl ReadOne<AttributeContext<'_>> for SignatureAttribute {
 
 #[derive(Debug)]
 pub struct SourceFileAttribute {
-    sourcefile_index: u16,
+    pub sourcefile_index: u16,
 }
 
 impl ReadOne<AttributeContext<'_>> for SourceFileAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let sourcefile_index = reader.read_u16::<BigEndian>()?;
 
         Ok(SourceFileAttribute { sourcefile_index })
@@ -521,14 +516,14 @@ impl ReadOne<AttributeContext<'_>> for SourceFileAttribute {
 
 #[derive(Debug)]
 pub struct SourceDebugExtensionAttribute {
-    debug_info: Vec<u8>,
+    pub debug_info: Vec<u8>,
 }
 
 impl ReadOne<AttributeContext<'_>> for SourceDebugExtensionAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let mut debug_info = vec![0; context.length];
         reader.read_exact(&mut debug_info)?;
 
@@ -540,15 +535,15 @@ impl ReadOne<AttributeContext<'_>> for SourceDebugExtensionAttribute {
 
 #[derive(Debug)]
 pub struct LineNumberTableAttribute {
-    start_pc: u16,
-    line_number: u16,
+    pub start_pc: u16,
+    pub line_number: u16,
 }
 
 impl ReadOne<AttributeContext<'_>> for LineNumberTableAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let start_pc = reader.read_u16::<BigEndian>()?;
         let line_number = reader.read_u16::<BigEndian>()?;
 
@@ -565,18 +560,18 @@ impl ReadAll<AttributeContext<'_>> for LineNumberTableAttribute {}
 
 #[derive(Debug)]
 pub struct LocalVariableTableAttribute {
-    start_pc: u16,
-    length: u16,
-    name_index: u16,
-    descriptor_index: u16,
-    index: u16,
+    pub start_pc: u16,
+    pub length: u16,
+    pub name_index: u16,
+    pub descriptor_index: u16,
+    pub index: u16,
 }
 
 impl ReadOne<AttributeContext<'_>> for LocalVariableTableAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let start_pc = reader.read_u16::<BigEndian>()?;
         let length = reader.read_u16::<BigEndian>()?;
         let name_index = reader.read_u16::<BigEndian>()?;
@@ -599,18 +594,18 @@ impl ReadAll<AttributeContext<'_>> for LocalVariableTableAttribute {}
 
 #[derive(Debug)]
 pub struct LocalVariableTypeTableAttribute {
-    start_pc: u16,
-    length: u16,
-    name_index: u16,
-    signature_index: u16,
-    index: u16,
+    pub start_pc: u16,
+    pub length: u16,
+    pub name_index: u16,
+    pub signature_index: u16,
+    pub index: u16,
 }
 
 impl ReadOne<AttributeContext<'_>> for LocalVariableTypeTableAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let start_pc = reader.read_u16::<BigEndian>()?;
         let length = reader.read_u16::<BigEndian>()?;
         let name_index = reader.read_u16::<BigEndian>()?;
@@ -633,14 +628,14 @@ impl ReadAll<AttributeContext<'_>> for LocalVariableTypeTableAttribute {}
 
 #[derive(Debug)]
 pub struct ConstantElementValueAttribute {
-    const_value_index: u16,
+    pub const_value_index: u16,
 }
 
 impl ReadOne<AttributeContext<'_>> for ConstantElementValueAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let const_value_index = reader.read_u16::<BigEndian>()?;
 
         Ok(ConstantElementValueAttribute { const_value_index })
@@ -649,15 +644,15 @@ impl ReadOne<AttributeContext<'_>> for ConstantElementValueAttribute {
 
 #[derive(Debug)]
 pub struct EnumElementValue {
-    type_name_index: u16,
-    const_name_index: u16,
+    pub type_name_index: u16,
+    pub const_name_index: u16,
 }
 
 impl ReadOne<AttributeContext<'_>> for EnumElementValue {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let type_name_index = reader.read_u16::<BigEndian>()?;
         let const_name_index = reader.read_u16::<BigEndian>()?;
 
@@ -670,14 +665,14 @@ impl ReadOne<AttributeContext<'_>> for EnumElementValue {
 
 #[derive(Debug)]
 pub struct ClassElementValueAttribute {
-    class_info_index: u16,
+    pub class_info_index: u16,
 }
 
 impl ReadOne<AttributeContext<'_>> for ClassElementValueAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let class_info_index = reader.read_u16::<BigEndian>()?;
 
         Ok(ClassElementValueAttribute { class_info_index })
@@ -686,14 +681,14 @@ impl ReadOne<AttributeContext<'_>> for ClassElementValueAttribute {
 
 #[derive(Debug)]
 pub struct AnnotationElementValue {
-    annotation: AnnotationAttribute,
+    pub annotation: AnnotationAttribute,
 }
 
 impl ReadOne<AttributeContext<'_>> for AnnotationElementValue {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let annotation = AnnotationAttribute::read_one(reader, context)?;
 
         Ok(AnnotationElementValue { annotation })
@@ -702,14 +697,14 @@ impl ReadOne<AttributeContext<'_>> for AnnotationElementValue {
 
 #[derive(Debug)]
 pub struct ArrayElementValue {
-    array_values: Vec<ElementValue>,
+    pub array_values: Vec<ElementValue>,
 }
 
 impl ReadOne<AttributeContext<'_>> for ArrayElementValue {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let array_values = ElementValue::read_all(reader, context)?;
 
         Ok(ArrayElementValue { array_values })
@@ -729,7 +724,7 @@ impl ReadOne<AttributeContext<'_>> for ElementValue {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let tag = reader.read_u8()? as char;
 
         match tag {
@@ -748,7 +743,7 @@ impl ReadOne<AttributeContext<'_>> for ElementValue {
             '[' => Ok(ElementValue::Array(ArrayElementValue::read_one(
                 reader, context,
             )?)),
-            _ => Err(ClassLoadingError::new(
+            _ => Err(ClassParsingError::new(
                 "Unknown tag for annotation element value",
             )),
         }
@@ -759,15 +754,15 @@ impl ReadAll<AttributeContext<'_>> for ElementValue {}
 
 #[derive(Debug)]
 pub struct ElementValuePair {
-    element_name_index: u16,
-    value: ElementValue,
+    pub element_name_index: u16,
+    pub value: ElementValue,
 }
 
 impl ReadOne<AttributeContext<'_>> for ElementValuePair {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let element_name_index = reader.read_u16::<BigEndian>()?;
         let value = ElementValue::read_one(reader, context)?;
 
@@ -787,15 +782,15 @@ impl ReadAll<AttributeContext<'_>> for ElementValuePair {}
 
 #[derive(Debug)]
 pub struct AnnotationAttribute {
-    type_index: u16,
-    element_value_pairs: Vec<ElementValuePair>,
+    pub type_index: u16,
+    pub element_value_pairs: Vec<ElementValuePair>,
 }
 
 impl ReadOne<AttributeContext<'_>> for AnnotationAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let type_index = reader.read_u16::<BigEndian>()?;
         let element_value_pairs = ElementValuePair::read_all(reader, context)?;
 
@@ -815,14 +810,14 @@ impl ReadAll<AttributeContext<'_>> for AnnotationAttribute {}
 
 #[derive(Debug)]
 pub struct ParameterAnnotationAttribute {
-    annotations: Vec<AnnotationAttribute>,
+    pub annotations: Vec<AnnotationAttribute>,
 }
 
 impl ReadOne<AttributeContext<'_>> for ParameterAnnotationAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let annotations = AnnotationAttribute::read_all(reader, context)?;
 
         Ok(ParameterAnnotationAttribute { annotations })
@@ -830,7 +825,7 @@ impl ReadOne<AttributeContext<'_>> for ParameterAnnotationAttribute {
 }
 
 impl ReadAll<AttributeContext<'_>> for ParameterAnnotationAttribute {
-    fn read_count<R: ReadBytesExt>(reader: &mut R) -> Result<usize, ClassLoadingError> {
+    fn read_count<R: ReadBytesExt>(reader: &mut R) -> Result<usize, ClassParsingError> {
         let count = reader.read_u8()? as usize;
         Ok(count)
     }
@@ -840,14 +835,14 @@ impl ReadAll<AttributeContext<'_>> for ParameterAnnotationAttribute {
 
 #[derive(Debug)]
 pub struct AnnotationDefaultAttribute {
-    default_value: ElementValue,
+    pub default_value: ElementValue,
 }
 
 impl ReadOne<AttributeContext<'_>> for AnnotationDefaultAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let default_value = ElementValue::read_one(reader, context)?;
 
         Ok(AnnotationDefaultAttribute { default_value })
@@ -858,15 +853,15 @@ impl ReadOne<AttributeContext<'_>> for AnnotationDefaultAttribute {
 
 #[derive(Debug)]
 pub struct BootstrapMethodAttribute {
-    bootstrap_method_ref: u16,
-    bootstrap_arguments: Vec<u16>,
+    pub bootstrap_method_ref: u16,
+    pub bootstrap_arguments: Vec<u16>,
 }
 
 impl ReadOne<AttributeContext<'_>> for BootstrapMethodAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         _context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let bootstrap_method_ref = reader.read_u16::<BigEndian>()?;
 
         let bootstrap_argument_count = reader.read_u16::<BigEndian>()? as usize;
@@ -886,15 +881,15 @@ impl ReadAll<AttributeContext<'_>> for BootstrapMethodAttribute {}
 
 #[derive(Debug)]
 pub struct MiscAttribute {
-    name_index: usize,
-    info: Vec<u8>,
+    pub name_index: usize,
+    pub info: Vec<u8>,
 }
 
 impl ReadOne<AttributeContext<'_>> for MiscAttribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         context: &AttributeContext,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let mut info = vec![0; context.length];
         reader.read_exact(&mut info)?;
 
@@ -936,7 +931,7 @@ impl<'a> ReadOne<ConstantPoolContext<'a>> for Attribute {
     fn read_one<R: ReadBytesExt>(
         reader: &mut R,
         context: &ConstantPoolContext<'a>,
-    ) -> Result<Self, ClassLoadingError> {
+    ) -> Result<Self, ClassParsingError> {
         let attribute_name_index = reader.read_u16::<BigEndian>()? as usize;
         let attribute_length = reader.read_u32::<BigEndian>()? as usize;
 
@@ -945,7 +940,7 @@ impl<'a> ReadOne<ConstantPoolContext<'a>> for Attribute {
             // If the referenced constant is an UTF-8 reference, we are up to spec
             Constant::Utf8(value) => Ok(&value.string),
             // Otherwise, we blow up, as nothing else is acceptable
-            _ => Err(ClassLoadingError::new(
+            _ => Err(ClassParsingError::new(
                 "Referenced attribute name should be an UTF-8 constant",
             )),
         }?;
